@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RightCode Game Level 9: Dog's Bone Maze</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* ใช้ฟอนต์ Kanit สำหรับภาษาไทย และ Inter สำหรับภาษาอังกฤษ */
+        body {
+            font-family: 'Kanit', 'Inter', sans-serif;
+            background-color: #f3f4f6; /* bg-gray-100 */
+        }
+
+        /* สไตล์สำหรับบล็อกที่กำลังถูกลาก */
+        .dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            cursor: grabbing;
+        }
+
+        /* สไตล์สำหรับช่องวาง (Editor / Bank) เมื่อมีบล็อกลากมาทับ */
+        .drag-over {
+            border-style: dashed;
+            border-color: #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+        }
+        
+        /* สไตล์สำหรับบล็อกที่ลากได้ */
+        .drag-item {
+            touch-action: none; /* สำหรับการลากบนมือถือ */
+            position: relative; 
+            border: 4px solid transparent; 
+        }
+
+        /* สไตล์สำหรับช่องแสดงผล (Game Grid) */
+        .grid-slot {
+            width: 100%;
+            height: 100px;
+            background-color: #ffffff;
+            border: 2px solid #d1d5db; /* gray-300 */
+            border-radius: 0.5rem; /* rounded-lg */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem; /* text-5xl */
+            transition: background-color 0.2s;
+        }
+        
+        /* สไตล์ช่องที่สุนัขอยู่ */
+        .dog-position {
+            background-color: #dbeafe; /* blue-100 */
+            border-color: #3b82f6; /* blue-500 */
+        }
+        
+        /* สไตล์ช่องที่มีสิ่งกีดขวาง */
+        .obstacle-slot {
+            background-color: #e2e8f0; /* gray-200 */
+            border-color: #94a3b8; /* gray-400 */
+            cursor: not-allowed;
+        }
+
+        /* สไตล์บล็อกคำสั่งที่กำลังทำงาน (Executing) */
+        .executing {
+            border-color: #22c55e; /* green-500 */
+            transform: scale(1.05);
+        }
+
+        /* สไตล์สำหรับ Modal Animation (Fade in & Zoom) */
+        #success-modal {
+            transition: opacity 0.3s ease-out;
+        }
+        #success-modal #modal-content {
+            transition: all 0.3s ease-out 0.1s;
+        }
+        
+        #success-modal.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #success-modal.hidden #modal-content {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        
+        #success-modal:not(.hidden) {
+            opacity: 1;
+        }
+        #success-modal:not(.hidden) #modal-content {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <main class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-6 md:p-10">
+        
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-yellow-600">RightCode Game Level 9</h1>
+            <p class="text-lg md:text-xl text-gray-700 mt-2">พาสุนัขไปหากระดูก!</p>
+            <p class="text-base text-gray-500 mt-4 max-w-3xl mx-auto">
+                ลากบล็อก ➡️, ⬇️, ⬅️ ไปวางใน "แถบคำสั่ง" เพื่อสร้างเส้นทางให้สุนัข 🐶 (มุมบนซ้าย) 
+                เดินไปถึงกระดูก 🦴 (มุมล่างขวา) โดย <span class="font-bold text-red-500">หลีกเลี่ยงต้นไม้ 🌳!</span>
+            </p>
+        </div>
+        
+        <!-- Game Layout -->
+        <div class="flex flex-col md:flex-row gap-6">
+            
+            <!-- Left Side: Grid + Bank -->
+            <div class="flex-1">
+                <!-- 1. Game Grid -->
+                <div id="game-grid-container" class="mb-6 p-4 bg-gray-200 rounded-xl border border-gray-300">
+                    <h3 class="text-center font-semibold text-gray-700 mb-3 text-lg">
+                        กระดาน
+                    </h3>
+                    <div id="game-grid" class="grid grid-cols-3 gap-2 max-w-sm mx-auto">
+                        <!-- ถูกสร้างโดย JavaScript -->
+                    </div>
+                </div>
+
+                <!-- 3. Block Bank -->
+                <div id="block-bank-container" class="p-4 bg-yellow-50 rounded-xl border-2 border-yellow-200 min-h-[120px]">
+                    <h3 class="text-center font-semibold text-yellow-800 mb-3 text-lg">
+                        คลังบล็อก (ลากจากที่นี่)
+                    </h3>
+                    <div id="block-bank-drag-items" class="drop-zone-area flex flex-wrap justify-center items-start gap-2 min-h-[80px] p-2 rounded-lg bg-white">
+                        <!-- ถูกสร้างโดย JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Code Editor -->
+            <div class="w-full md:w-1/2">
+                <!-- 2. Code Editor -->
+                <div id="code-editor-container" class="mb-6 p-4 bg-blue-50 rounded-xl border-2 border-blue-200 min-h-[400px] h-full">
+                    <h3 class="text-center font-semibold text-blue-800 mb-3 text-lg">
+                        แถบคำสั่ง (วางโค้ดที่นี่)
+                        <!-- (ปรับปรุง) เปลี่ยนเป้าหมายเป็น 4 -->
+                        <span class="text-sm font-normal text-gray-600 ml-2">(<span id="block-count">0</span> / 4)</span>
+                    </h3>
+                    <div id="code-editor-dropzone" class="drop-zone-area flex flex-wrap justify-start items-start gap-2 min-h-[300px] p-2 rounded-lg bg-white">
+                        <!-- บล็อกที่ลากมาจะมาอยู่ที่นี่ -->
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="mt-8 text-center">
+            <div class="flex justify-center gap-4">
+                <button id="check-btn" class="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    ตรวจสอบ (Run)
+                </button>
+                <button id="reset-btn" class="px-8 py-3 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    เริ่มใหม่
+                </button>
+            </div>
+            <div id="message" class="mt-6 text-2xl font-bold h-8">
+                <!-- ข้อความแสดงผลลัพธ์ -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <!-- Backdrop -->
+        <div class="absolute inset-0" id="modal-backdrop"></div>
+        
+        <div id="modal-content" class="relative bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+            <span class="text-8xl mb-6 block" role="img" aria-label="Party Popper">🥳</span>
+            <h2 class="text-3xl font-bold text-gray-900 mb-2">ยินดีด้วย!</h2>
+            <p class="text-lg text-gray-700 mb-8">คุณพาสุนัขไปหากระดูกได้สำเร็จ!</p>
+            <button id="play-again-btn" class="w-full px-8 py-4 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-lg">
+                เล่นใหม่ (Level 9)
+            </button>
+        </div>
+    </div>
+    
+    <!-- (ปรับปรุง) ซ่อนต้นแบบองค์ประกอบต่างๆ -->
+    <span id="dog" class="text-5xl hidden" role="img" aria-label="Dog">🐶</span>
+    <span id="bone" class="text-5xl hidden" role="img" aria-label="Bone">🦴</span>
+    <span id="tree" class="text-5xl hidden" role="img" aria-label="Tree">🌳</span>
+
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- องค์ประกอบ UI ---
+            const gameGrid = document.getElementById('game-grid');
+            const codeEditor = document.getElementById('code-editor-dropzone');
+            const blockBank = document.getElementById('block-bank-drag-items');
+            
+            const checkBtn = document.getElementById('check-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const messageEl = document.getElementById('message');
+            
+            const modal = document.getElementById('success-modal');
+            const modalBackdrop = document.getElementById('modal-backdrop');
+            const playAgainBtn = document.getElementById('play-again-btn');
+            const blockCountEl = document.getElementById('block-count');
+
+            // (ปรับปรุง) ดึงต้นแบบมาจาก HTML ที่ซ่อนไว้
+            const dogElPrototype = document.getElementById('dog');
+            const boneElPrototype = document.getElementById('bone');
+            const treeElPrototype = document.getElementById('tree');
+
+            // --- ค่าคงที่ของเกม (Grid 3x3) ---
+            const TOTAL_SLOTS = 9;
+            const GRID_COLS = 3;
+            const START_POS_INDEX = 0; // มุมบนซ้าย (index 0)
+            const END_POS_INDEX = 8;   // มุมล่างขวา (index 8)
+            const OBSTACLE_INDICES = [1, 5]; // ช่องที่มีต้นไม้ (index 1 = [0,1], index 5 = [1,2])
+            // (ปรับปรุง) เปลี่ยนเป้าหมายเป็น 4
+            const CORRECT_MOVES = 4;   // เส้นทางสั้นสุด
+
+            let draggedItem = null; 
+            let dogPosIndex = START_POS_INDEX;
+            let dogEl, boneEl; // ตัวแปรสำหรับเก็บ Element ที่ใช้งานจริง
+
+            // --- ฟังก์ชันอัปเดตตัวนับบล็อก ---
+            function updateBlockCount() {
+                const count = codeEditor.querySelectorAll('.drag-item').length;
+                blockCountEl.textContent = count;
+            }
+
+            // --- ฟังก์ชันเริ่มต้นเกม ---
+            function initGame() {
+                modal.classList.add('hidden');
+                messageEl.textContent = '';
+                messageEl.className = 'mt-6 text-2xl font-bold h-8';
+                
+                checkBtn.disabled = false;
+                resetBtn.disabled = false;
+                
+                // (ปรับปรุง) โคลนองค์ประกอบจากต้นแบบ
+                dogEl = dogElPrototype.cloneNode(true);
+                boneEl = boneElPrototype.cloneNode(true);
+                dogEl.id = 'active-dog';
+                boneEl.id = 'active-bone';
+                dogEl.classList.remove('hidden');
+                boneEl.classList.remove('hidden');
+
+                // 1. สร้าง Game Grid (3x3)
+                gameGrid.innerHTML = '';
+                for (let i = 0; i < TOTAL_SLOTS; i++) {
+                    const slot = document.createElement('div');
+                    slot.className = 'grid-slot';
+                    slot.dataset.index = i;
+                    gameGrid.appendChild(slot);
+                    
+                    // เพิ่มสิ่งกีดขวาง
+                    if (OBSTACLE_INDICES.includes(i)) {
+                        slot.classList.add('obstacle-slot');
+                        const treeClone = treeElPrototype.cloneNode(true);
+                        treeClone.id = `tree-${i}`; // ให้มี id ที่ไม่ซ้ำกัน
+                        treeClone.classList.remove('hidden'); // แสดงต้นไม้
+                        slot.appendChild(treeClone);
+                    }
+                }
+                
+                // 2. วางสุนัขและกระดูก
+                dogPosIndex = START_POS_INDEX;
+                updateDogPositionUI(START_POS_INDEX, null); // วางสุนัขที่จุดเริ่มต้น
+                gameGrid.children[END_POS_INDEX].appendChild(boneEl);
+
+                // 3. สร้างบล็อกคำสั่งในคลัง
+                blockBank.innerHTML = '';
+                codeEditor.innerHTML = '';
+                updateBlockCount(); 
+                
+                // สร้าง 4 บล็อก "เดินขวา"
+                for (let i = 0; i < 4; i++) {
+                    createBlock('move-right', '➡️', `block-right-${i}`);
+                }
+                // สร้าง 4 บล็อก "เดินลง"
+                for (let i = 0; i < 4; i++) {
+                    createBlock('move-down', '⬇️', `block-down-${i}`);
+                }
+                // สร้าง 4 บล็อก "เดินซ้าย"
+                for (let i = 0; i < 4; i++) {
+                    createBlock('move-left', '⬅️', `block-left-${i}`);
+                }
+            }
+            
+            // ฟังก์ชันช่วยสร้างบล็อก
+            function createBlock(type, emoji, id) {
+                const element = document.createElement('div');
+                element.id = id;
+                element.className = 'drag-item w-20 h-16 bg-blue-500 text-white shadow-md rounded-lg flex items-center justify-center cursor-move transition-all duration-150 p-2 border-4 border-transparent hover:shadow-lg';
+                element.draggable = true;
+                element.dataset.type = type; 
+                
+                element.innerHTML = `<span class="text-3xl" role="img">${emoji}</span>`;
+
+                addDragItemListeners(element);
+                blockBank.appendChild(element);
+            }
+            
+            // --- อัปเดตตำแหน่งสุนัขบน UI ---
+            function updateDogPositionUI(newIndex, oldIndex) {
+                const slots = gameGrid.children;
+                
+                // ลบไฮไลท์เก่า (ถ้ามี)
+                if (oldIndex !== null && slots[oldIndex]) {
+                    slots[oldIndex].classList.remove('dog-position');
+                }
+                
+                // ย้ายสุนัข (ตรวจสอบว่ามีช่องนั้นจริง)
+                if (slots[newIndex]) {
+                    slots[newIndex].appendChild(dogEl);
+                    // เพิ่มไฮไลท์ใหม่
+                    slots[newIndex].classList.add('dog-position');
+                }
+                
+                dogPosIndex = newIndex;
+            }
+
+            // --- Event Listeners (Drag & Drop) ---
+            
+            function addDragItemListeners(item) {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+                item.addEventListener('touchstart', handleTouchStart, { passive: false });
+                item.addEventListener('touchmove', handleTouchMove, { passive: false });
+                item.addEventListener('touchend', handleTouchEnd);
+            }
+
+            // เพิ่ม Listeners ให้กับ Drop Zones
+            [codeEditor, blockBank].forEach(zone => {
+                zone.addEventListener('dragover', handleDragOver);
+                zone.addEventListener('dragenter', handleDragEnter);
+                zone.addEventListener('dragleave', handleDragLeave);
+                zone.addEventListener('drop', handleDrop);
+            });
+
+            // --- Handlers: การลาก (Mouse) ---
+            
+            function handleDragStart(e) {
+                draggedItem = this;
+                this.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', this.id);
+                setTimeout(() => this.style.visibility = 'hidden', 0);
+            }
+
+            function handleDragEnd() {
+                this.classList.remove('dragging');
+                this.style.visibility = 'visible';
+                draggedItem = null;
+                document.querySelectorAll('.drag-over').forEach(zone => zone.classList.remove('drag-over'));
+            }
+
+            function handleDragOver(e) {
+                e.preventDefault(); 
+                e.dataTransfer.dropEffect = 'move';
+            }
+
+            function handleDragEnter(e) {
+                e.preventDefault();
+                const dropTarget = e.target.closest('.drop-zone-area');
+                if (dropTarget) dropTarget.classList.add('drag-over');
+            }
+
+            function handleDragLeave(e) {
+                const dropTarget = e.target.closest('.drop-zone-area');
+                if (dropTarget) dropTarget.classList.remove('drag-over');
+            }
+
+            function handleDrop(e) {
+                e.preventDefault();
+                e.stopPropagation(); 
+                
+                const dropTarget = e.target.closest('.drop-zone-area');
+                if (!dropTarget || !draggedItem) return;
+
+                dropTarget.classList.remove('drag-over');
+                dropTarget.appendChild(draggedItem);
+                updateBlockCount(); // อัปเดตตัวนับ
+            }
+
+            // --- Handlers: การลาก (Touch) ---
+            let currentDropTarget = null, clone = null;
+
+            function handleTouchStart(e) {
+                e.preventDefault();
+                draggedItem = this;
+                draggedItem.classList.add('dragging');
+                const touch = e.touches[0];
+
+                clone = draggedItem.cloneNode(true);
+                clone.style.position = 'absolute';
+                clone.style.pointerEvents = 'none';
+                clone.style.zIndex = '1000';
+                clone.style.opacity = '0.8';
+                document.body.appendChild(clone);
+                
+                draggedItem.style.visibility = 'hidden';
+                moveClone(touch.pageX, touch.pageY);
+            }
+            
+            function moveClone(x, y) {
+                if (!clone) return;
+                clone.style.left = `${x - clone.offsetWidth / 2}px`;
+                clone.style.top = `${y - clone.offsetHeight / 2}px`;
+            }
+
+            function handleTouchMove(e) {
+                e.preventDefault();
+                if (!draggedItem) return;
+                const touch = e.touches[0];
+                moveClone(touch.pageX, touch.pageY);
+
+                clone.style.display = 'none'; 
+                let elementUnder = document.elementFromPoint(touch.clientX, touch.clientY);
+                clone.style.display = 'flex'; 
+
+                const dropTarget = elementUnder ? elementUnder.closest('.drop-zone-area') : null;
+
+                if (currentDropTarget && currentDropTarget !== dropTarget) {
+                    currentDropTarget.classList.remove('drag-over');
+                }
+                
+                if (dropTarget) {
+                    dropTarget.classList.add('drag-over');
+                    currentDropTarget = dropTarget;
+                } else {
+                    currentDropTarget = null;
+                }
+            }
+
+            function handleTouchEnd(e) {
+                e.preventDefault();
+                if (!draggedItem) return;
+
+                if (clone) clone.remove();
+                clone = null;
+                draggedItem.style.visibility = 'visible';
+                draggedItem.classList.remove('dragging');
+
+                if (currentDropTarget) {
+                    currentDropTarget.classList.remove('drag-over');
+                    handleDrop({ 
+                        target: currentDropTarget, 
+                        preventDefault: () => {}, 
+                        stopPropagation: () => {} 
+                    });
+                } else {
+                    const originalParent = draggedItem.parentElement;
+                    if(originalParent) originalParent.appendChild(draggedItem);
+                    updateBlockCount(); // อัปเดตตัวนับ
+                }
+                draggedItem = null;
+                currentDropTarget = null;
+            }
+
+            // --- ฟังก์ชันตรวจสอบ (Run Program) ---
+            
+            async function runProgram() {
+                checkBtn.disabled = true;
+                resetBtn.disabled = true;
+                messageEl.textContent = 'สุนัขกำลังเดิน...';
+                messageEl.className = 'mt-6 text-2xl font-bold h-8 text-gray-700';
+
+                // 1. รีเซ็ตตำแหน่งสุนัข
+                let currentPosIndex = START_POS_INDEX;
+                updateDogPositionUI(START_POS_INDEX, dogPosIndex); // อัปเดตตำแหน่ง UI
+
+                // 2. ดึงคำสั่ง
+                const blocks = codeEditor.querySelectorAll('.drag-item');
+                const moveCount = blocks.length;
+                let hitObstacle = false;
+                let hitWall = false;
+                
+                await new Promise(resolve => setTimeout(resolve, 500)); // รอแป๊บ
+
+                // 3. วนลูปทำทีละคำสั่ง
+                for (let i = 0; i < moveCount; i++) {
+                    const block = blocks[i];
+                    block.classList.add('executing');
+                    await new Promise(resolve => setTimeout(resolve, 300)); 
+                    
+                    let oldPosIndex = currentPosIndex;
+                    let nextPosIndex = currentPosIndex;
+                    const blockType = block.dataset.type;
+
+                    // คำนวณตำแหน่งใหม่
+                    if (blockType === 'move-right') {
+                        if ((currentPosIndex + 1) % GRID_COLS === 0) { hitWall = true; } else { nextPosIndex++; }
+                    } else if (blockType === 'move-down') {
+                        if (currentPosIndex + GRID_COLS >= TOTAL_SLOTS) { hitWall = true; } else { nextPosIndex += GRID_COLS; }
+                    } else if (blockType === 'move-left') {
+                        if (currentPosIndex % GRID_COLS === 0) { hitWall = true; } else { nextPosIndex--; }
+                    }
+                    
+                    // ตรวจสอบการชนกำแพง
+                    if (hitWall) {
+                        messageEl.textContent = 'โอ๊ะ! สุนัขเดินชนกำแพง! 😵';
+                        messageEl.className = 'mt-6 text-2xl font-bold h-8 text-red-600';
+                        block.classList.remove('executing');
+                        break; 
+                    }
+
+                    // ตรวจสอบการชนสิ่งกีดขวาง
+                    if (OBSTACLE_INDICES.includes(nextPosIndex)) {
+                        hitObstacle = true;
+                        messageEl.textContent = 'โอ๊ะ! สุนัขเดินชนต้นไม้! 🌳';
+                        messageEl.className = 'mt-6 text-2xl font-bold h-8 text-red-600';
+                        // ไม่ต้องย้ายตำแหน่ง แต่จบการทำงาน
+                        block.classList.remove('executing');
+                        break;
+                    }
+
+                    currentPosIndex = nextPosIndex;
+                    updateDogPositionUI(currentPosIndex, oldPosIndex);
+                    await new Promise(resolve => setTimeout(resolve, 300)); 
+                    block.classList.remove('executing');
+                }
+                
+                if (hitWall || hitObstacle) {
+                    resetBtn.disabled = false;
+                    checkBtn.disabled = false;
+                    return; 
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 500)); 
+
+                // 4. (ปรับปรุง) ตรวจสอบผลลัพธ์
+                if (currentPosIndex === END_POS_INDEX) {
+                    // ขอแค่ถึงเป้าหมาย ก็ถือว่าสำเร็จ
+                    messageEl.textContent = 'สำเร็จ! 🥳';
+                    messageEl.className = 'mt-6 text-2xl font-bold h-8 text-green-600';
+                    modal.classList.remove('hidden');
+                    checkBtn.disabled = true;
+                } else {
+                    messageEl.textContent = 'โอ๊ะ! สุนัขไปไม่ถึงกระดูก 😢';
+                    messageEl.className = 'mt-6 text-2xl font-bold h-8 text-red-600';
+                }
+
+                resetBtn.disabled = false;
+                // (ปรับปรุง) ถ้ายังไม่สำเร็จ (ไม่ถึงเป้าหมาย) ก็ให้ลองใหม่ได้
+                if(currentPosIndex !== END_POS_INDEX) {
+                    checkBtn.disabled = false; 
+                }
+            }
+
+            // --- เชื่อมต่อปุ่ม ---
+            checkBtn.addEventListener('click', runProgram);
+            resetBtn.addEventListener('click', initGame);
+            playAgainBtn.addEventListener('click', initGame);
+            modalBackdrop.addEventListener('click', () => modal.classList.add('hidden'));
+
+            // --- เริ่มเกมครั้งแรก ---
+            initGame();
+        });
+    </script>
+
+</body>
+</html>
